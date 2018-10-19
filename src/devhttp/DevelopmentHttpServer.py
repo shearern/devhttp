@@ -9,9 +9,10 @@ from .DevelopmentRequestHandler import DevelopmentRequestHandler
 
 from .endpoints import StaticEndpoint, DynamicEndpoint, NotFoundEndpoint
 
+from .utils import find, normalize_url
+
 class ThreadedHTTPListener(ThreadingMixIn, HTTPServer):
     """Handle requests in a separate thread."""
-
 
 class DevelopmentHttpServer:
     '''A quick and dirty HTTP server'''
@@ -32,6 +33,8 @@ class DevelopmentHttpServer:
         :param url: Path portion of URL
         :param method: GET, POST, etc.
         '''
+
+        url_path = normalize_url(url_path)
 
         if url_path in self.__endpoints:
             return self.__endpoints[url_path]
@@ -55,6 +58,7 @@ class DevelopmentHttpServer:
         :param size:
             Size of the content in bytes
         '''
+        url = normalize_url(url)
 
         # Make sure path is unique
         if url in self.__endpoints:
@@ -68,6 +72,29 @@ class DevelopmentHttpServer:
             path = path,
             size = size)
         self.__endpoints[url] = StaticEndpoint(asset = file)
+
+
+    def add_multiple_static(self, url_prefix, path, filter_paths=None):
+        '''
+        Add multiple static files that can be served
+
+        :param url_prefix:
+            Prefix to apply to all files included
+        :param path:
+            Path to directory to `search for files under
+        :param filter_paths:
+            method to filter which paths to include
+        '''
+
+        url_prefix = normalize_url(url_prefix)
+        if url_prefix != '' and not url_prefix.endswith('/'):
+            url_prefix += '/'
+
+        for filepath in find(path):
+            if filter_paths is None or filter_paths(filepath):
+                self.add_static(
+                    url = url_prefix + filepath,
+                    path = os.path.join(path, filepath))
 
 
     def add_asset(self, name, path):
@@ -114,6 +141,8 @@ class DevelopmentHttpServer:
         :param content_type:
             Either a content type to return, or a filename to guess content type from
         '''
+
+        url = normalize_url(url)
 
         # Make sure path is unique
         if url in self.__endpoints:
