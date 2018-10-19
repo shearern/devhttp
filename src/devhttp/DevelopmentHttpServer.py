@@ -4,14 +4,12 @@ from mimetypes import guess_type
 from http.server import HTTPServer
 from socketserver import ThreadingMixIn
 
-from .StaticFiles import StaticFiles
-from .StaticFile import StaticFile
+from .AssetFile import AssetFile
 from .DevelopmentRequestHandler import DevelopmentRequestHandler
-from .ThreadedServerWrapper import ThreadedServerWrapper
 
-from . import responses
+from .endpoints import StaticEndpoint, DynamicEndpoint, NotFoundEndpoint
 
-class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
+class ThreadedHTTPListener(ThreadingMixIn, HTTPServer):
     """Handle requests in a separate thread."""
 
 
@@ -20,34 +18,25 @@ class DevelopmentHttpServer:
 
     def __init__(self):
 
-        # Container to store statics and assets added to the server
-        self.__assets = StaticFiles()
+        # Store static and dynamic endpoints in one collection
+        self.__endpoints = dict()
 
-        # Libraries of statics and assets loaded by load_assets_module()
-        self.__asset_libs = list()
-
-        # Dynamic content generators
-        self.__views = dict()
+        # Store assets in their own container
+        self.__assets = dict()
 
 
-    def get_response(self, url, method):
+    def get_endpoint(self, url_path, method):
         '''
         Called by handler to get the response contents
 
         :param url: Path portion of URL
         :param method: GET, POST, etc.
         '''
-        if method == 'GET':
 
-            if self.__assets.has(url):
-                return responses.StaticFileResponse(self.__assets.get(url))
+        if url_path in self.__endpoints:
+            return self.__endpoints[url_path]
 
-            if url in self.__views:
-                callable, content_type = self.__views[url]
-                rendered = callable(None, None, None) # TODO: Setup parms
-                return responses.DynamicResponse(rendered, content_type)
-
-        raise Exception("Don't know how to respond to %s:%s" % (method, url))
+        return NotFoundEndpoint()
 
 
     def add_static(self, url, path, content_type=None, size=None):
@@ -68,34 +57,17 @@ class DevelopmentHttpServer:
         '''
 
         # Make sure path is unique
-        if self.__assets.has(url):
+        if url in self.__endpoints:
             logging.getLogger(__name__).warning("Duplicate path provided: " + url)
 
-        # Make sure file exists
-        if not os.path.exists(path):
-            raise NameError("File doesn't exist: %s" % (path))
-
-        # Guess content type from filename
-        if content_type is None:
-            content_type = guess_type(path)
-            if content_type[0] is None:
-                logging.getLogger(__name__).warning(
-                    "Can't determine mimetype for %s" % (path))
-            else:
-                content_type = content_type[0]
-
-        # Get file size
-        if size is None:
-            size = os.path.getsize(path)
-
         # Save
-        self.__assets.add(StaticFile(
-            asset_type = StaticFile.ASSET,
+        file = AssetFile(
+            asset_type = AssetFile.ASSET,
             name = url,
             content_type = content_type,
             path = path,
-            size = size
-        ))
+            size = size)
+        self.__endpoints[url] = StaticEndpoint(asset = file)
 
 
     def add_asset(self, name, path):
@@ -109,17 +81,16 @@ class DevelopmentHttpServer:
         '''
 
         # Make sure path is unique
-        if self.__assets.has(name):
+        if name in self.__assets:
             logging.getLogger(__name__).warning("Duplicate asset key: " + name)
 
         # Save
-        self.__assets.add(StaticFile(
-            asset_type = StaticFile.ASSET,
+        self.__assets[name] = AssetFile(
+            asset_type = AssetFile.ASSET,
             name = name,
             content_type = None,
             path = path,
-            size = None
-        ))
+            size = None)
 
 
     def add_dynamic(self, url, callable, content_type):
@@ -145,13 +116,14 @@ class DevelopmentHttpServer:
         '''
 
         # Make sure path is unique
-        if url in self.__views:
+        if url in self.__endpoints:
             raise KeyError("Path already defined for a view")
 
         # Interpret content type
         if '/' in content_type:
             pass
         else:
+            # Allow caller to specify a filename, or just an extension
             filename = content_type
             if filename.startswith('.'):
                 filename = 'file' + filename
@@ -163,12 +135,16 @@ class DevelopmentHttpServer:
                 content_type = content_type[0]
 
         # Register callable
-        self.__views[url] = (callable, content_type)
+        self.__endpoints[url] = DynamicEndpoint(
+            callable = callable,
+            server = self,
+            assets = self.__assets,
+            content_type = content_type)
 
 
     def serve_forever(self, ip, port):
         '''Listted for HTTP requests as serve content from this server'''
-        http_server = ThreadedHTTPServer((ip, port), DevelopmentRequestHandler)
+        http_server = ThreadedHTTPListener((ip, port), DevelopmentRequestHandler)
         http_server.development_http_server = self
         http_server.serve_forever()
 

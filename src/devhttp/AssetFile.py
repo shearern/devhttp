@@ -1,7 +1,8 @@
+import os
+import logging
+from mimetypes import guess_type
 
-
-
-class StaticFile:
+class AssetFile:
     '''A single static file that the server can serve'''
 
     STATIC_FILE = 'static'
@@ -24,6 +25,30 @@ class StaticFile:
         self.__content_type = content_type
         self.__path = path
         self.__size = size
+
+        self._load_file_attributes()
+
+
+    def _load_file_attributes(self):
+        '''Retrieve any additional attributes needed from disk'''
+
+       # Make sure file exists
+        if not os.path.exists(self.__path):
+            raise NameError("File doesn't exist: %s" % (self.__path))
+
+        # Guess content type from filename
+        if self.__content_type is None:
+            content_type = guess_type(self.__path)
+            if content_type[0] is None:
+                logging.getLogger(__name__).warning(
+                    "Can't determine mimetype for %s" % (self.__path))
+                self.__content_type = None
+            else:
+                self.__content_type = content_type[0]
+
+        # Get file size
+        if self.__size is None:
+            self.__size = os.path.getsize(self.__path)
 
 
     @property

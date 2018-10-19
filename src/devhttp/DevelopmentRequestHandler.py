@@ -5,6 +5,8 @@ from mimetypes import guess_type
 from textwrap import dedent
 import traceback
 
+from .endpoints import InternalError
+
 class DevelopmentRequestHandler(BaseHTTPRequestHandler):
     '''
     Class for handling individual HTTP requests for the DevelopmentHttpServer
@@ -56,66 +58,10 @@ class DevelopmentRequestHandler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         path = url.path.lstrip('/')
 
-        # Get handler
-        response = self.devhttpsrv.get_response(path, 'GET')
-        if response is None:
-            self.send_response(404)
-            self.end_headers()
-            self.wfile.write("<h1>404 Not Found</h1>".encode('utf-8'))
-            return
-
-        # Return static content
-        self.send_response(200)
-
-        content_type = response.content_type()
-        if content_type is not None:
-            self.send_header('Content-Type', content_type)
-
-        size = response.response_size()
-        if size is not None:
-            self.send_header('Content-Length', str(size))
-
-        self.end_headers()
-
-        self.wfile.write(response.content())
-
-        #
-        # # Check dynamic views
-        # for cls in self._get_view_classes():
-        #     m = cls.PAT.match(path)
-        #     if m:
-        #         view = cls(self.DB, self.SOURCE)
-        #         try:
-        #             html = view.render(url = url, matches = m)
-        #
-        #         except Exception as e:
-        #             exc_type, exc_value, exc_traceback = sys.exc_info()
-        #
-        #             self.send_response(500)
-        #             self.send_header('Content-Type', 'text/html')
-        #             self.end_headers()
-        #
-        #             self.wfile.write(dedent("""\
-        #                 <html>
-        #                 <head><title>Error</title></head>
-        #                 <body>
-        #                 <h1>Error: {ecls}</h1>
-        #                 <div>{tb}</div>
-        #                 </body></html>
-        #             """).format(
-        #                 ecls = e.__class__.__name__,
-        #                 tb = "\n".join(["<div><pre>%s</prd></div>" % (l) for l in traceback.format_exception(
-        #                     exc_type, exc_value, exc_traceback)])
-        #             ).encode('utf-8'))
-        #
-        #             return
-        #
-        #         self.send_response(200)
-        #
-        #         for header, value in view.headers():
-        #             self.send_header(header, value)
-        #         self.end_headers()
-        #
-        #         self.wfile.write(view.encode_output(html))
+        # Pass to endpoint to respond
+        try:
+            self.devhttpsrv.get_endpoint(path, 'GET').respond(self)
+        except Exception as e:
+            InternalError(e).respond(self)
 
 
