@@ -1,8 +1,9 @@
 import os
 import logging
-from mimetypes import guess_type
 from http.server import HTTPServer
 from socketserver import ThreadingMixIn
+from urllib.parse import urlparse
+from mimetypes import guess_type
 
 from .AssetFile import AssetFile
 from .DevelopmentRequestHandler import DevelopmentRequestHandler
@@ -126,7 +127,7 @@ class DevelopmentHttpServer:
             size = None)
 
 
-    def add_dynamic(self, url, callable, content_type):
+    def add_dynamic(self, url, callable, content_type=None):
         '''
         Add a dynamic content generating method callable
 
@@ -155,6 +156,8 @@ class DevelopmentHttpServer:
             raise KeyError("Path already defined for a view")
 
         # Interpret content type
+        if content_type is None:
+            content_type = os.path.basename(url)
         if '/' in content_type:
             pass
         else:
@@ -204,4 +207,3 @@ class DevelopmentHttpServer:
         http_server = ThreadedHTTPListener((ip, port), DevelopmentRequestHandler)
         http_server.development_http_server = self
         http_server.serve_forever()
-
