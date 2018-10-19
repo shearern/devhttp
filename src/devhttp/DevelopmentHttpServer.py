@@ -25,6 +25,9 @@ class DevelopmentHttpServer:
         # Store assets in their own container
         self.__assets = dict()
 
+        # Redirects or URL aliases  [url]: redirect_to_url
+        self.__redirects = dict()
+
 
     def get_endpoint(self, url_path, method):
         '''
@@ -35,6 +38,9 @@ class DevelopmentHttpServer:
         '''
 
         url_path = normalize_url(url_path)
+
+        if url_path in self.__redirects:
+            url_path = self.__redirects[url_path]
 
         if url_path in self.__endpoints:
             return self.__endpoints[url_path]
@@ -169,6 +175,28 @@ class DevelopmentHttpServer:
             server = self,
             assets = self.__assets,
             content_type = content_type)
+
+
+    def redirect(self, from_url, to_url):
+        '''
+        Record a redirect (a URL alias) to allow content to be accessed under multiple urls
+
+        Typical usage:
+            .redirect('', 'index.html')
+
+        :param from_url:
+            URL to respond to
+        :param to_url:
+            Existing endpoint URL to repond to from_url
+        '''
+
+        from_url = normalize_url(from_url)
+        to_url = normalize_url(to_url)
+
+        if to_url not in self.__endpoints:
+            raise KeyError("No endpoint defined for url %s" % (to_url))
+
+        self.__redirects[from_url] = to_url
 
 
     def serve_forever(self, ip, port):
