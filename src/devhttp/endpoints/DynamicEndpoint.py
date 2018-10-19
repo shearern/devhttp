@@ -35,7 +35,9 @@ class DynamicEndpoint(Endpoint):
                 server=self.__server,
                 assets=self.__assets)
         except Exception as e:
-            InternalError(e, "Failed to call dynamic content generator: %s" % ('name?'))
+            InternalError(e, "Failed to call dynamic content generator: %s()" % (
+                self.__view_callable.__name__)).respond(request)
+            return
 
         # Encode to binary
         if content.__class__ is str:
