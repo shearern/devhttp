@@ -1,8 +1,8 @@
 import os
 import logging
+from threading import RLock
 from http.server import HTTPServer
 from socketserver import ThreadingMixIn
-from urllib.parse import urlparse
 from mimetypes import guess_type
 
 from .AssetFile import AssetFile
@@ -29,6 +29,9 @@ class DevelopmentHttpServer:
         # Redirects or URL aliases  [url]: redirect_to_url
         self.__redirects = dict()
 
+        # Lock to protect concurrent access across handler threads
+        self.lock = RLock()
+
 
     def get_endpoint(self, url_path, method):
         '''
@@ -40,11 +43,12 @@ class DevelopmentHttpServer:
 
         url_path = normalize_url(url_path)
 
-        if url_path in self.__redirects:
-            url_path = self.__redirects[url_path]
+        with self.lock:
+            if url_path in self.__redirects:
+                url_path = self.__redirects[url_path]
 
-        if url_path in self.__endpoints:
-            return self.__endpoints[url_path]
+            if url_path in self.__endpoints:
+                return self.__endpoints[url_path]
 
         return NotFoundEndpoint()
 
@@ -67,18 +71,20 @@ class DevelopmentHttpServer:
         '''
         url = normalize_url(url)
 
-        # Make sure path is unique
-        if url in self.__endpoints:
-            logging.getLogger(__name__).warning("Duplicate path provided: " + url)
+        with self.lock:
 
-        # Save
-        file = AssetFile(
-            asset_type = AssetFile.ASSET,
-            name = url,
-            content_type = content_type,
-            path = path,
-            size = size)
-        self.__endpoints[url] = StaticEndpoint(asset = file)
+            # Make sure path is unique
+            if url in self.__endpoints:
+                logging.getLogger(__name__).warning("Duplicate path provided: " + url)
+
+            # Save
+            file = AssetFile(
+                asset_type = AssetFile.ASSET,
+                name = url,
+                content_type = content_type,
+                path = path,
+                size = size)
+            self.__endpoints[url] = StaticEndpoint(asset = file)
 
 
     def add_multiple_static(self, url_prefix, path, filter_paths=None):
@@ -114,20 +120,22 @@ class DevelopmentHttpServer:
             Path to the file on disk
         '''
 
-        # Make sure path is unique
-        if name in self.__assets:
-            logging.getLogger(__name__).warning("Duplicate asset key: " + name)
+        with self.lock:
 
-        # Save
-        self.__assets[name] = AssetFile(
-            asset_type = AssetFile.ASSET,
-            name = name,
-            content_type = None,
-            path = path,
-            size = None)
+            # Make sure path is unique
+            if name in self.__assets:
+                logging.getLogger(__name__).warning("Duplicate asset key: " + name)
+
+            # Save
+            self.__assets[name] = AssetFile(
+                asset_type = AssetFile.ASSET,
+                name = name,
+                content_type = None,
+                path = path,
+                size = None)
 
 
-    def add_dynamic(self, url, callable, content_type=None):
+    def add_dynamic(self, url, callable, content_type=None, autolock=True):
         '''
         Add a dynamic content generating method callable
 
@@ -147,37 +155,46 @@ class DevelopmentHttpServer:
             state in the server class (inherited from DevelopmentHttpServer).
         :param content_type:
             Either a content type to return, or a filename to guess content type from
+        :param autolock:
+            If True, then will aquire server.lock before calling dynamic code generator.
+            This blocks all other requests (static and dynamic), so if you want to lock
+            manually on a long-running request, set to false and lock in your view with:
+                with server.lock:
+                    # do stuff
         '''
 
         url = normalize_url(url)
 
-        # Make sure path is unique
-        if url in self.__endpoints:
-            raise KeyError("Path already defined for a view")
+        with self.lock:
 
-        # Interpret content type
-        if content_type is None:
-            content_type = os.path.basename(url)
-        if '/' in content_type:
-            pass
-        else:
-            # Allow caller to specify a filename, or just an extension
-            filename = content_type
-            if filename.startswith('.'):
-                filename = 'file' + filename
-            content_type = guess_type(filename)
-            if content_type[0] is None:
-                logging.getLogger(__name__).warning(
-                    "Can't determine mimetype for %s" % (filename))
+            # Make sure path is unique
+            if url in self.__endpoints:
+                raise KeyError("Path already defined for a view")
+
+            # Interpret content type
+            if content_type is None:
+                content_type = os.path.basename(url)
+            if '/' in content_type:
+                pass
             else:
-                content_type = content_type[0]
+                # Allow caller to specify a filename, or just an extension
+                filename = content_type
+                if filename.startswith('.'):
+                    filename = 'file' + filename
+                content_type = guess_type(filename)
+                if content_type[0] is None:
+                    logging.getLogger(__name__).warning(
+                        "Can't determine mimetype for %s" % (filename))
+                else:
+                    content_type = content_type[0]
 
-        # Register callable
-        self.__endpoints[url] = DynamicEndpoint(
-            callable = callable,
-            server = self,
-            assets = self.__assets,
-            content_type = content_type)
+            # Register callable
+            self.__endpoints[url] = DynamicEndpoint(
+                callable = callable,
+                server = self,
+                assets = self.__assets,
+                content_type = content_type,
+                autolock = autolock)
 
 
     def redirect(self, from_url, to_url):
@@ -196,10 +213,12 @@ class DevelopmentHttpServer:
         from_url = normalize_url(from_url)
         to_url = normalize_url(to_url)
 
-        if to_url not in self.__endpoints:
-            raise KeyError("No endpoint defined for url %s" % (to_url))
+        with self.lock:
 
-        self.__redirects[from_url] = to_url
+            if to_url not in self.__endpoints:
+                raise KeyError("No endpoint defined for url %s" % (to_url))
+
+            self.__redirects[from_url] = to_url
 
 
     def serve_forever(self, ip, port):

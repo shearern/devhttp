@@ -3,17 +3,9 @@
 from .Endpoint import Endpoint
 from .InternalError import InternalError
 
-
-class ThreadedServerWrapper:
-    '''Wraps access to server attributes in a thread safe method'''
-
-    def __init__(self, server):
-        self.__server = server
-
-
 class DynamicEndpoint(Endpoint):
 
-    def __init__(self, callable, server, assets, content_type):
+    def __init__(self, callable, server, assets, content_type, autolock=True):
         '''
 
         :param callable: The callable to generate the content for the client
@@ -21,23 +13,37 @@ class DynamicEndpoint(Endpoint):
         :param assets: The assets container
         '''
         self.__view_callable = callable
-        self.__server = ThreadedServerWrapper(server)
+        self.__server = server
         self.__assets = assets
         self.__content_type = content_type
+        self.__autolock = autolock
 
 
     def respond(self, request):
 
-        # Call callable to generate content
+        # Generators are called inside the server lock to let them access
+        # server and assets safely.
+        # This does mean only ne dynamic endpoint can be run at a time.
+        locked = False
         try:
-            content = self.__view_callable(
-                request=request,
-                server=self.__server,
-                assets=self.__assets)
-        except Exception as e:
-            InternalError(e, "Failed to call dynamic content generator: %s()" % (
-                self.__view_callable.__name__)).respond(request)
-            return
+            if self.__autolock:
+                self.__server.lock.acquire()
+                locked = True
+
+            # Call callable to generate content
+            try:
+                content = self.__view_callable(
+                    request=request,
+                    server=self.__server,
+                    assets=self.__assets)
+            except Exception as e:
+                InternalError(e, "Failed to call dynamic content generator: %s()" % (
+                    self.__view_callable.__name__)).respond(request)
+                return
+
+        finally:
+            if self.__autolock and locked:
+                self.__server.lock.release()
 
         # Encode to binary
         if content.__class__ is str:
