@@ -2,6 +2,9 @@ import os
 import logging
 from mimetypes import guess_type
 
+from io import BytesIO
+from zipfile import ZipFile
+
 class AssetFile:
     '''A single static file that the server can serve'''
 
@@ -75,3 +78,56 @@ class AssetFile:
     def content(self):
         with open(self.path, 'rb') as fh:
             return fh.read()
+
+
+    def save_metadata(self):
+        '''Return representation for SavedAssetFile'''
+        return {
+            'name':   self.name,
+            'type':   self.asset_type,
+            'ctype':  self.content_type,
+            'size':   self.size,
+        }
+
+
+class SavedAssetFile(AssetFile):
+    '''
+    Asset file that was saved by DevelopmentHttpServer.save_assets_module()
+
+    Contents will be read back from in-memory zip file
+    '''
+
+    def __init__(self, zf_data, zf_name, metadata):
+        '''
+        :param zf_data:
+            Bytes contents of zipfile with asset contents
+
+            Note: ZipFile and BytesIO declared in here to allow multiple
+            assets to read the same in-memory bytes.
+
+        :param zf_name:
+            Name of the item in the ZipFile for this asset contents
+            Note: I'm assuming it's ok to have multiple ZipFile objects
+            using the same BytesIO
+        :param metadata:
+            Metadata saved by AssetFile.save_metadata()
+        '''
+        super().__init__(
+            name = metadata['name'],
+            asset_type = metadata['type'],
+            content_type = metadata['ctype'],
+            path = None,
+            size = metadata['size'])
+
+        self.__zf = ZipFile(BytesIO(zf_data))
+        self.__zf_name = zf_name
+
+
+    def _load_file_attributes(self):
+        '''Retrieve any additional attributes needed from disk'''
+        pass
+
+    @property
+    def content(self):
+        return self.__zf.read(self.__zf_name)
+

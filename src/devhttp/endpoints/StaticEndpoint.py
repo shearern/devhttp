@@ -24,3 +24,8 @@ class StaticEndpoint(Endpoint):
         request.wfile.write(self.__file.content)
 
 
+    @property
+    def asset_file(self):
+        return self.__file
+
+
