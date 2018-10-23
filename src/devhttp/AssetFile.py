@@ -97,14 +97,10 @@ class SavedAssetFile(AssetFile):
     Contents will be read back from in-memory zip file
     '''
 
-    def __init__(self, zf_data, zf_name, metadata):
+    def __init__(self, zf, zf_name, metadata):
         '''
-        :param zf_data:
-            Bytes contents of zipfile with asset contents
-
-            Note: ZipFile and BytesIO declared in here to allow multiple
-            assets to read the same in-memory bytes.
-
+        :param zf:
+            ZipFile to read content from (wrapped with a thread-safe reader)
         :param zf_name:
             Name of the item in the ZipFile for this asset contents
             Note: I'm assuming it's ok to have multiple ZipFile objects
@@ -119,7 +115,7 @@ class SavedAssetFile(AssetFile):
             path = None,
             size = metadata['size'])
 
-        self.__zf = ZipFile(BytesIO(zf_data))
+        self.__zf = zf
         self.__zf_name = zf_name
 
 

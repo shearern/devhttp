@@ -16,7 +16,7 @@ from .DevelopmentRequestHandler import DevelopmentRequestHandler
 
 from .endpoints import StaticEndpoint, DynamicEndpoint, NotFoundEndpoint
 
-from .utils import find, normalize_url
+from .utils import find, normalize_url, SharedZipFileReader
 
 class ThreadedHTTPListener(ThreadingMixIn, HTTPServer):
     """Handle requests in a separate thread."""
@@ -324,7 +324,7 @@ class DevelopmentHttpServer:
 
         '''
 
-        zf = ZipFile(BytesIO(assets_data), 'r')
+        zf = SharedZipFileReader(BytesIO(assets_data))
 
         try:
             manifest = zf.read('manifest.json')
@@ -334,12 +334,11 @@ class DevelopmentHttpServer:
 
         # Restore endpoints
         for info in manifest['endpoints']:
-            print(info['url'])
             # see add_static()
             # TODO: Make common method for add_static() and load_assets_module to call
             url = info['url']
             file = SavedAssetFile(
-                zf_data = assets_data,
+                zf = zf,
                 zf_name = info['filename'],
                 metadata = info['asset'])
             self.__endpoints[url] = StaticEndpoint(asset = file)
@@ -350,7 +349,7 @@ class DevelopmentHttpServer:
             # TODO: Make common method for add_asset() and load_assets_module to call
             name = info['name']
             file = SavedAssetFile(
-                zf_data = assets_data,
+                zf = zf,
                 zf_name = info['filename'],
                 metadata=info['asset'])
             self.__assets[name] = file
