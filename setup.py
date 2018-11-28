@@ -22,7 +22,6 @@ setup(
     ],
     install_requires=[
         'jinja2',
-        'markdown',
     ],
     include_package_data=True,
     zip_safe=False,  # True?
