@@ -1,6 +1,6 @@
 import sys
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 from mimetypes import guess_type
 from textwrap import dedent
 import traceback
@@ -55,8 +55,8 @@ class DevelopmentRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
 
         # Parse URL
-        url = urlparse(self.path)
-        path = url.path.lstrip('/')
+        self.url = urlparse(self.path)
+        path = self.url.path.lstrip('/')
 
         # Pass to endpoint to respond
         try:
@@ -64,4 +64,18 @@ class DevelopmentRequestHandler(BaseHTTPRequestHandler):
         except Exception as e:
             InternalError(e).respond(self)
 
+
+    def __getitem__(self, key):
+        '''
+        Get request parameters
+
+        # TODO: Parse from POST as well?
+
+        :param key: name of desired parameter
+        '''
+        query = parse_qs(self.url.query)
+        try:
+            return query[key][0] # Assuming 1 entry for every key
+        except IndexError:
+            raise KeyError("No value for " + str(key))
 
