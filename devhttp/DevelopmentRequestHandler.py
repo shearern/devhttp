@@ -62,7 +62,10 @@ class DevelopmentRequestHandler(BaseHTTPRequestHandler):
         try:
             self.devhttpsrv.get_endpoint(path, 'GET').respond(self)
         except Exception as e:
-            InternalError(e).respond(self)
+            try:
+                InternalError(e).respond(self)
+            except ConnectionAbortedError:
+                pass
 
 
     def __getitem__(self, key):
